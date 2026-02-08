@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="et">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Tähetuled">
+    <title>🚦 Tähetuled</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="stars-bg"></div>
+
+    <div id="app">
+        <!-- Menu Screen -->
+        <div id="menu-screen" class="screen active">
+            <div class="screen-content menu-content">
+                <div class="title-area">
+                    <div class="title-icon">🚦</div>
+                    <h1>Tähetuled</h1>
+                    <p class="instructions">Jäta tähed meelde ja kirjuta need!</p>
+                </div>
+
+                <div class="settings-bar">
+                    <div class="setting-group">
+                        <span class="setting-label">🔤 Tähed:</span>
+                        <div class="toggle-group" id="case-toggle">
+                            <button class="toggle-btn active" data-case="upper">ABC</button>
+                            <button class="toggle-btn" data-case="lower">abc</button>
+                            <button class="toggle-btn" data-case="mixed">AaBb</button>
+                        </div>
+                    </div>
+                    <div class="setting-group">
+                        <span class="setting-label">⏱️ Aeg:</span>
+                        <div class="toggle-group" id="timeout-toggle">
+                            <button class="toggle-btn" data-timeout="3000">3s</button>
+                            <button class="toggle-btn" data-timeout="5000">5s</button>
+                            <button class="toggle-btn active" data-timeout="7000">7s</button>
+                            <button class="toggle-btn" data-timeout="10000">10s</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="level-grid" class="level-grid"></div>
+
+                <button id="start-btn" class="btn btn-large btn-primary pulse-anim">
+                    Alusta! 🎮
+                </button>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="screen">
+            <div class="game-header">
+                <button id="back-btn" class="btn btn-small btn-ghost">← Menüü</button>
+                <div id="level-label" class="header-label"></div>
+                <div id="round-label" class="header-label"></div>
+                <div id="score-label" class="header-label score">⭐ 0</div>
+            </div>
+
+            <div id="timer-container" class="timer-container">
+                <div id="timer-bar" class="timer-bar"></div>
+            </div>
+
+            <div id="game-area" class="game-area">
+                <div id="left-panel" class="panel">
+                    <div class="panel-label" id="left-label">👀 Vaata!</div>
+                    <div id="left-light" class="street-light-wrap"></div>
+                </div>
+
+                <div class="panel-divider"></div>
+
+                <div id="right-panel" class="panel">
+                    <div class="panel-label" id="right-label">✍️ Kirjuta!</div>
+                    <div id="right-light" class="street-light-wrap"></div>
+                </div>
+            </div>
+
+            <div class="game-footer">
+                <div id="game-message" class="game-message"></div>
+                <button id="check-btn" class="btn btn-large btn-success" style="display:none">Kontrolli! ✓</button>
+                <button id="next-btn" class="btn btn-large btn-primary" style="display:none">Edasi! →</button>
+            </div>
+        </div>
+
+        <!-- Level Complete Overlay -->
+        <div id="complete-overlay" class="overlay" style="display:none">
+            <div class="overlay-card">
+                <div id="complete-stars" class="big-stars"></div>
+                <h2 id="complete-title"></h2>
+                <p id="complete-message"></p>
+                <div class="overlay-buttons">
+                    <button id="complete-next-btn" class="btn btn-large btn-primary">Järgmine tase →</button>
+                    <button id="complete-menu-btn" class="btn btn-large btn-ghost">Menüü</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="confetti-container"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
