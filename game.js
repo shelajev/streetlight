@@ -55,8 +55,8 @@ const LEVELS = [
 const CONFIG = {
     letterCase: 'upper',     // 'upper', 'lower', or 'mixed'
     timeoutOverride: null,   // null = use level default
-    canvasSize: 100,         // CSS pixels for drawing canvas
-    lineWidth: 6,
+    canvasSize: 200,         // CSS pixels for drawing canvas
+    lineWidth: 8,
     strokeColor: '#1a1a2e',
 };
 
@@ -74,9 +74,7 @@ let S = {
     levelStars: {},      // { levelId: stars }
 };
 
-let tesseractWorker = null;
-let tesseractReady  = false;
-let tesseractLoading = false;
+
 
 // ---- Helpers ----
 const $ = s => document.querySelector(s);
@@ -96,17 +94,19 @@ function applyCase(s) {
 
 /**
  * Check if an answer matches the expected value.
- * `raw` can be a string (fallback) or { top, alternatives } (OCR mode).
- * Strips mid-string spaces before comparing. Checks top + 2 alternatives.
+ * `raw` is a string or { top, alternatives }.
  */
 function matchAnswer(raw, expected) {
     const exp = normalize(expected);
     if (typeof raw === 'string') {
-        return normalize(raw) === exp;
+        const norm = normalize(raw);
+        console.log(`[HWR-match] "${raw}" → "${norm}" vs expected "${exp}" → ${norm === exp}`);
+        return norm === exp;
     }
-    // OCR mode: raw = { top, alternatives }
     const candidates = [raw.top, ...(raw.alternatives || [])];
-    return candidates.some(c => normalize(c) === exp);
+    const result = candidates.some(c => normalize(c) === exp);
+    console.log(`[HWR-match] top="${raw.top}" alts=[${(raw.alternatives||[]).join(',')}] vs expected "${exp}" → ${result}`);
+    return result;
 }
 
 function pick(arr, n) {
@@ -221,12 +221,6 @@ function startLevel(idx) {
     S.score = 0;
     showScreen('game');
     updateHeader();
-
-    // Lazy-init Tesseract for draw mode
-    if (!tesseractReady && !tesseractLoading) {
-        initTesseract();
-    }
-
     startRound();
 }
 
@@ -391,7 +385,7 @@ function renderStreetLight(container, letters, opts = {}) {
             // Clear button
             const clrBtn = document.createElement('button');
             clrBtn.className = 'canvas-clear-btn';
-            clrBtn.textContent = '✕';
+            clrBtn.textContent = '↺';
             clrBtn.addEventListener('click', (e) => { e.stopPropagation(); clearCanvas(canvas); wrap.classList.remove('has-content'); });
             wrap.appendChild(clrBtn);
             lamp.appendChild(wrap);
@@ -433,7 +427,7 @@ function addExpectedLabel(lamp, expected) {
 }
 
 // ============================================================
-//  CANVAS DRAWING
+//  CANVAS DRAWING  (with stroke recording for Google HWR)
 // ============================================================
 function createDrawCanvas(size) {
     const canvas = document.createElement('canvas');
@@ -448,21 +442,25 @@ function createDrawCanvas(size) {
     ctx.lineJoin = 'round';
     ctx.lineWidth = CONFIG.lineWidth;
     ctx.strokeStyle = CONFIG.strokeColor;
+    // Stroke data for handwriting recognition
+    canvas._strokes = [];   // [ { xs:[], ys:[], ts:[] }, … ]
+    canvas._cssSize = size;
     return canvas;
 }
 
 function clearCanvas(canvas) {
     const ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
     ctx.save();
     ctx.setTransform(1,0,0,1,0,0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.restore();
+    canvas._strokes = [];
 }
 
 function setupDrawEvents(canvas, wrap) {
     const ctx = canvas.getContext('2d');
     let drawing = false;
+    let currentStroke = null;
 
     function pos(e) {
         const r = canvas.getBoundingClientRect();
@@ -474,6 +472,7 @@ function setupDrawEvents(canvas, wrap) {
         e.preventDefault();
         drawing = true;
         const p = pos(e);
+        currentStroke = { xs: [p.x], ys: [p.y], ts: [Date.now()] };
         ctx.beginPath();
         ctx.moveTo(p.x, p.y);
     }
@@ -481,13 +480,22 @@ function setupDrawEvents(canvas, wrap) {
         e.preventDefault();
         if (!drawing) return;
         const p = pos(e);
+        currentStroke.xs.push(p.x);
+        currentStroke.ys.push(p.y);
+        currentStroke.ts.push(Date.now());
         ctx.lineTo(p.x, p.y);
         ctx.stroke();
         ctx.beginPath();
         ctx.moveTo(p.x, p.y);
         wrap.classList.add('has-content');
     }
-    function end() { drawing = false; }
+    function end() {
+        if (drawing && currentStroke && currentStroke.xs.length > 1) {
+            canvas._strokes.push(currentStroke);
+        }
+        drawing = false;
+        currentStroke = null;
+    }
 
     canvas.addEventListener('touchstart', start, { passive: false });
     canvas.addEventListener('touchmove',  move,  { passive: false });
@@ -499,152 +507,105 @@ function setupDrawEvents(canvas, wrap) {
 }
 
 // ============================================================
-//  ANSWER COLLECTION & RECOGNITION
+//  ANSWER COLLECTION  (Google Handwriting Recognition API)
 // ============================================================
 async function collectAnswers() {
     const canvases = [...document.querySelectorAll('#right-light .lamp-canvas')];
+    const lv = LEVELS[S.levelIdx];
     const results = [];
 
-    if (!tesseractReady) {
-        showMessage('OCR laadib… ⏳');
-        // Wait up to 15s for Tesseract
-        for (let i = 0; i < 30 && !tesseractReady; i++) await sleep(500);
-    }
+    console.log(`[HWR] collectAnswers: ${canvases.length} canvases`);
 
-    if (!tesseractReady) {
-        // Fallback: ask user to re-enter via prompt
-        showMessage('OCR pole saadaval.');
-        return canvases.map(() => prompt('Sisesta täht:') || '');
-    }
+    for (let ci = 0; ci < canvases.length; ci++) {
+        const canvas = canvases[ci];
+        const strokes = canvas._strokes || [];
+        console.log(`[HWR] Canvas ${ci}: ${strokes.length} strokes, points=[${strokes.map(s => s.xs.length).join(',')}]`);
 
-    // Set whitelist based on current level pool
-    const lv = LEVELS[S.levelIdx];
-    const poolChars = [...new Set(lv.pool.join(''))].join('');
-    try {
-        await tesseractWorker.setParameters({
-            tessedit_char_whitelist: poolChars + poolChars.toLowerCase(),
-            tessedit_pageseg_mode: lv.pool[0].length > 1 ? '7' : '10',
-        });
-    } catch (err) {
-        console.warn('Tesseract setParameters error:', err);
-    }
+        if (strokes.length === 0) {
+            console.log(`[HWR] Canvas ${ci}: empty (nothing drawn)`);
+            results.push({ top: '', alternatives: [] });
+            continue;
+        }
 
-    for (const canvas of canvases) {
-        const processed = preprocessCanvas(canvas);
-        if (!processed) { results.push({ top: '', alternatives: [] }); continue; }
         try {
-            const { data } = await tesseractWorker.recognize(processed);
-            const top = data.text.trim().toUpperCase();
+            const candidates = await googleHandwritingRecognize(strokes, canvas._cssSize);
+            console.log(`[HWR] Canvas ${ci}: Google API returned candidates:`, candidates);
 
-            // Collect alternative readings from symbol-level choices (top 3)
-            // Tesseract.js nests symbols under words; flatten them
-            const symbols = (data.symbols && data.symbols.length > 0)
-                ? data.symbols
-                : (data.words || []).flatMap(w => w.symbols || []);
-            const alternatives = [];
-            if (symbols.length > 0) {
-                // For single-char recognition, use symbol choices directly
-                if (symbols.length === 1 && symbols[0].choices) {
-                    symbols[0].choices.slice(0, 3).forEach(ch => {
-                        const alt = ch.text.trim().toUpperCase();
-                        if (alt && alt !== top) alternatives.push(alt);
-                    });
-                } else {
-                    // For multi-char (syllables), build alternatives by
-                    // combining each symbol's top choices
-                    const perSymbol = symbols.map(sym =>
-                        (sym.choices || []).slice(0, 3).map(ch => ch.text.trim().toUpperCase())
-                    );
-                    // Add full-word alternatives from first choice per position
-                    for (let ci = 0; ci < 3; ci++) {
-                        const alt = perSymbol.map(choices => choices[ci] || choices[0] || '').join('');
-                        if (alt && alt !== top) alternatives.push(alt);
-                    }
-                }
+            if (candidates.length > 0) {
+                // Filter/rank by pool membership
+                const poolSet = new Set(lv.pool.map(p => normalize(p)));
+                const poolMatch = candidates.find(c => poolSet.has(normalize(c)));
+                const top = poolMatch || candidates[0];
+                const alts = candidates.filter(c => c !== top).slice(0, 3);
+
+                console.log(`[HWR] Canvas ${ci}: RESULT top="${top}" alts=[${alts.join(',')}] (poolMatch=${!!poolMatch})`);
+                results.push({ top: normalize(top), alternatives: alts.map(normalize) });
+            } else {
+                console.log(`[HWR] Canvas ${ci}: no candidates returned`);
+                results.push({ top: '', alternatives: [] });
             }
-
-            results.push({ top, alternatives: [...new Set(alternatives)].slice(0, 2) });
         } catch (err) {
-            console.warn('OCR error:', err);
+            console.error(`[HWR] Canvas ${ci}: recognition failed:`, err);
             results.push({ top: '', alternatives: [] });
         }
     }
     return results;
 }
 
-function preprocessCanvas(canvas) {
-    // Find bounding box of drawn pixels
-    const dpr = window.devicePixelRatio || 1;
-    const w = canvas.width, h = canvas.height;
-    const ctx = canvas.getContext('2d');
-    const img = ctx.getImageData(0, 0, w, h);
-    const d = img.data;
-    let x1=w, y1=h, x2=0, y2=0;
-    for (let i = 0; i < d.length; i += 4) {
-        if (d[i+3] > 30) {
-            const x = (i/4) % w, y = Math.floor((i/4)/w);
-            if (x < x1) x1 = x; if (x > x2) x2 = x;
-            if (y < y1) y1 = y; if (y > y2) y2 = y;
+/**
+ * Call Google's handwriting recognition API with stroke data.
+ * Returns an array of candidate strings, best first.
+ */
+async function googleHandwritingRecognize(strokes, canvasSize) {
+    // Build ink array: each stroke → [ [x1,x2,…], [y1,y2,…], [t1,t2,…] ]
+    // Coords must be rounded ints, timestamps must be relative (ms from 0)
+    const t0 = strokes[0].ts[0];
+    const ink = strokes.map(s => [
+        s.xs.map(x => Math.round(x)),
+        s.ys.map(y => Math.round(y)),
+        s.ts.map(t => t - t0)
+    ]);
+
+    const payload = {
+        input_type: 0,
+        options: 'enable_pre_space',
+        requests: [{
+            writing_guide: {
+                writing_area_width: Math.round(canvasSize),
+                writing_area_height: Math.round(canvasSize)
+            },
+            ink: ink,
+            pre_context: '',
+            max_num_results: 10,
+            max_completions: 0
+        }]
+    };
+
+    console.log(`[HWR-google] Sending ${strokes.length} strokes, canvasSize=${canvasSize}, totalPoints=${ink.reduce((a,s)=>a+s[0].length,0)}`);
+
+    const resp = await fetch(
+        'https://inputtools.google.com/request?itc=en-t-i0-handwrit&app=chromeos',
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
         }
+    );
+
+    if (!resp.ok) {
+        throw new Error(`Google HWR HTTP ${resp.status}`);
     }
-    if (x2 <= x1 || y2 <= y1) return null; // nothing drawn
 
-    const bw = x2-x1, bh = y2-y1;
-    const size = 200;
-    const padding = 30;
-    const inner = size - 2*padding;
-    const scale = Math.min(inner/bw, inner/bh);
+    const data = await resp.json();
+    console.log(`[HWR-google] Response:`, JSON.stringify(data));
 
-    const out = document.createElement('canvas');
-    out.width = size; out.height = size;
-    const oc = out.getContext('2d');
-    oc.fillStyle = '#fff';
-    oc.fillRect(0, 0, size, size);
-    const dx = padding + (inner - bw*scale)/2;
-    const dy = padding + (inner - bh*scale)/2;
-    oc.drawImage(canvas, x1, y1, bw, bh, dx, dy, bw*scale, bh*scale);
-
-    // Binarize
-    const od = oc.getImageData(0, 0, size, size);
-    for (let i = 0; i < od.data.length; i += 4) {
-        const avg = (od.data[i]+od.data[i+1]+od.data[i+2])/3;
-        const v = avg < 140 ? 0 : 255;
-        od.data[i]=v; od.data[i+1]=v; od.data[i+2]=v; od.data[i+3]=255;
+    // Response format: ["SUCCESS", [["", ["A","a","4",…], [], {…}]]]
+    if (data[0] === 'SUCCESS' && data[1] && data[1][0] && data[1][0][1]) {
+        return data[1][0][1]; // array of candidate strings
     }
-    oc.putImageData(od, 0, 0);
-    return out;
-}
 
-// ============================================================
-//  TESSERACT INITIALIZATION (lazy)
-// ============================================================
-async function initTesseract() {
-    if (tesseractLoading || tesseractReady) return;
-    tesseractLoading = true;
-
-    // Show loading indicator
-    const ind = document.createElement('div');
-    ind.className = 'ocr-loading';
-    ind.id = 'ocr-indicator';
-    ind.innerHTML = '<span class="spinner"></span> OCR laadib…';
-    document.body.appendChild(ind);
-
-    try {
-        tesseractWorker = await Tesseract.createWorker('eng', 1, {
-            logger: m => {
-                if (m.status === 'recognizing text') {
-                    // progress
-                }
-            }
-        });
-        tesseractReady = true;
-        console.log('Tesseract ready');
-    } catch (err) {
-        console.error('Tesseract init failed:', err);
-    }
-    tesseractLoading = false;
-    const el = document.getElementById('ocr-indicator');
-    if (el) el.remove();
+    console.warn(`[HWR-google] Unexpected response format:`, data);
+    return [];
 }
 
 // ============================================================

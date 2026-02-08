@@ -17,8 +17,8 @@
     --housing:    #23272f;
     --housing-border: #3a3f4b;
 
-    --lamp-size:  clamp(80px, 14vmin, 130px);
-    --font-lamp:  clamp(28px, 6vmin, 56px);
+    --lamp-size:  clamp(160px, 28vmin, 260px);
+    --font-lamp:  clamp(48px, 10vmin, 80px);
     --radius:     16px;
 }
 
@@ -342,8 +342,8 @@ html, body {
 
 /* ---- Lamp Canvas (Draw Mode) ---- */
 .lamp-canvas-wrap {
-    width: 80%;
-    height: 80%;
+    width: 85%;
+    height: 85%;
     position: relative;
     display: flex;
     align-items: center;
@@ -361,13 +361,13 @@ html, body {
 }
 .canvas-clear-btn {
     position: absolute;
-    top: -6px; right: -6px;
-    width: 24px; height: 24px;
+    top: -8px; right: -8px;
+    width: 32px; height: 32px;
     border-radius: 50%;
     border: none;
     background: var(--accent);
     color: #fff;
-    font-size: 13px; font-weight: 700;
+    font-size: 16px; font-weight: 700;
     cursor: pointer;
     display: flex; align-items: center; justify-content: center;
     opacity: 0;
@@ -380,11 +380,11 @@ html, body {
 /* ---- Result overlay on lamp ---- */
 .lamp-result {
     position: absolute;
-    bottom: -4px; right: -4px;
-    width: 32px; height: 32px;
+    bottom: -6px; right: -6px;
+    width: 40px; height: 40px;
     border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-size: 16px; font-weight: 700;
+    font-size: 20px; font-weight: 700;
     z-index: 3;
     box-shadow: 0 2px 8px rgba(0,0,0,.3);
 }
@@ -467,30 +467,7 @@ html, body {
 @keyframes pop     { 0%{transform:scale(1)} 50%{transform:scale(1.15)} 100%{transform:scale(1)} }
 @keyframes shake   { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
 
-/* ---- OCR Loading Indicator ---- */
-.ocr-loading {
-    display: inline-block;
-    font-size: 13px;
-    color: var(--text-dim);
-    padding: 4px 12px;
-    background: var(--bg-surface);
-    border-radius: 8px;
-    position: fixed;
-    bottom: 10px; right: 10px;
-    z-index: 50;
-    animation: fadeIn .3s;
-}
-.ocr-loading .spinner {
-    display: inline-block;
-    width: 12px; height: 12px;
-    border: 2px solid var(--text-dim);
-    border-top-color: var(--accent2);
-    border-radius: 50%;
-    animation: spin .6s linear infinite;
-    vertical-align: middle;
-    margin-right: 6px;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
+
 
 /* ---- Responsive ---- */
 @media (max-height: 500px) {
